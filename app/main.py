@@ -6,14 +6,11 @@ import time
 app = FastAPI()
 
 client = MongoClient("mongodb://localhost:27017/")
-db = client["spotify"]
-collection = db["database.spotify 30k"]
+db = client["Spotify_songs"]
+collection = db["Songs"]
 
 
-# Fonction mathématique simple (Distance Euclidienne)
-# On compare deux chansons sur : danceability, energy, valence
 def calculate_distance(song1, song2):
-    # On récupère les champs. On met 0.0 par sécurité si le champ manque.
     d1 = float(song1.get("danceability", 0.0))
     e1 = float(song1.get("energy", 0.0))
     v1 = float(song1.get("valence", 0.0))
@@ -39,24 +36,18 @@ def get_song(track_id: str):
 def recommend(track_id: str):
     start_time = time.time()
     
-    # 1. Récupérer la chanson cible
     target_song = collection.find_one({"track_id": track_id})
     if not target_song:
         raise HTTPException(status_code=404, detail="Song not found")
-    
-    # 2. Filtrage (L'optimisation est ICI)
-    # On ne demande à Mongo que les chansons du même genre
-    # On exclut toujours la chanson elle-même
+
     target_genre = target_song.get("playlist_genre")
     query_filter = {
         "playlist_genre": target_genre,
         "track_id": {"$ne": track_id}
     }
     
-    # Mongo fait le travail de tri initial
     candidate_songs = list(collection.find(query_filter))
     
-    # 3. Calcul de distance (sur beaucoup moins de candidats !)
     scored_songs = []
     for song in candidate_songs:
         dist = calculate_distance(target_song, song)
@@ -66,8 +57,6 @@ def recommend(track_id: str):
             "distance": dist
         })
     
-    
-    # 4. Trier par distance (plus petit = plus proche) et prendre le top 5
     scored_songs.sort(key=lambda x: x["distance"])
     recommendations = scored_songs[:5]
     
