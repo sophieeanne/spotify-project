@@ -64,7 +64,6 @@ print(f"   - Latence moyenne (p50) : {avg_latency:.2f} sec")
 print(f"   - Latence p95 (tail)    : {p95_latency:.2f} sec")
 print(f"   - Latence Max (p100)    : {max_latency:.2f} sec")
 
-# Interprétation automatique basée sur le cours
 if p95_latency > 1.0:
     print("\nDIAGNOSTIC : Saturation critique !")
     print("   Le p95 dépasse 1 seconde. Les files d'attente (Queueing) sont pleines")
