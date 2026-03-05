@@ -6,7 +6,7 @@ import time
 app = FastAPI()
 
 client = MongoClient("mongodb://localhost:27017/")
-db = client["Spotify_songs"]
+db = client["spotify"]
 collection = db["Songs"]
 
 
