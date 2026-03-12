@@ -4,6 +4,7 @@
 #include <chrono>
 #include <vector>
 #include <algorithm>
+#include <atomic>
 
 // Framework HTTP : Lithium -> pour créer API en C++
 #include <lithium_http_server.hh>
@@ -19,11 +20,15 @@
 #include <bsoncxx/builder/basic/kvp.hpp>
 #include <bsoncxx/builder/basic/array.hpp>
 
+// REDIS
+#include <sw/redis++/redis++.h>
+
 using namespace bsoncxx::builder::basic;
 
 #ifndef LI_SYMBOL_track_id
 #define LI_SYMBOL_track_id
 LI_SYMBOL(track_id)
+LI_SYMBOL(threads)
 #endif
 
 // Structure pour stocker les résultats avant le tri
@@ -59,12 +64,26 @@ double calculate_distance(const bsoncxx::document::view& target, const bsoncxx::
     return std::sqrt(std::pow(d1 - d2, 2) + std::pow(e1 - e2, 2) + std::pow(v1 - v2, 2));
 }
 
+// LOAD SHEDDING 
+std::atomic<int> active_requests{0};
+const int MAX_CONCURRENT_REQUESTS = 50;
+
+struct RequestGuard {
+    std::atomic<int>& counter;
+    RequestGuard(std::atomic<int>& c) : counter(c) { counter++; }
+    ~RequestGuard() { counter--; }
+};
+
+
 int main() {
     // Initialisation de MongoDB 
     mongocxx::instance instance{};
 
     mongocxx::uri uri("mongodb://127.0.0.1:27017");
     mongocxx::pool pool{mongocxx::uri("mongodb://127.0.0.1:27017")};
+
+    // Initialisation de Redis
+    sw::redis::Redis redis("tcp://127.0.0.1:6379");
 
     // Creation de l'API avec Lithium
     li::http_api api;
@@ -96,11 +115,36 @@ int main() {
         // Demarrer le chronometre
         auto start_time = std::chrono::high_resolution_clock::now();
 
-        auto mongo_client = pool.acquire();
-        auto collection = (*mongo_client)["Spotify_songs"]["Songs"];
+        if (active_requests.load() >= MAX_CONCURRENT_REQUESTS) {
+            std::cout << "BOUM ! Rejet instantané (Load Shedding)" << std::endl;
+            response.set_status(503);
+            response.write("{\"detail\": \"Service Unavailable\"}");
+            return;
+        }
+
+        RequestGuard guard(active_requests);
 
         auto params = request.url_parameters(s::track_id = std::string());
         std::string t_id = params.track_id;
+
+        // Verification dans le cache Redis
+        std::string cache_key = "recommend:" + t_id;
+        try {
+            auto cached_response = redis.get(cache_key);
+            if (cached_response) {
+                // Si on trouve une réponse dans Redis, on retourne le resultat
+                std::cout << "CACHE HIT (Redis) pour la musique " << t_id << std::endl;
+                response.write(*cached_response);
+                return; 
+            }
+        } catch (const sw::redis::Error& e) {
+            std::cerr << "Erreur Redis : " << e.what() << std::endl;
+        }
+        std::cout << "CACHE MISS... Calcul avec MongoDB en cours..." << std::endl;
+
+
+        auto mongo_client = pool.acquire();
+        auto collection = (*mongo_client)["Spotify_songs"]["Songs"];
 
         // Etape 1 : Recuperer la chanson cible
         auto target_opt = collection.find_one(make_document(kvp("track_id", t_id)));
@@ -163,12 +207,21 @@ int main() {
             kvp("recommendations", arr_builder)
         );
 
+        // Stocker le résultat dans Redis pour les prochaines requêtes
+        std::string final_json = bsoncxx::to_json(response_doc.view());
+        try {
+            redis.set(cache_key, final_json);
+            redis.expire(cache_key, 3600); // Expire dans 3600 secondes
+        } catch (const sw::redis::Error& e) {
+            std::cerr << "Erreur Redis (Ecriture) : " << e.what() << std::endl;
+        }
+
         // Envoyer la réponse finale
         response.write(bsoncxx::to_json(response_doc.view()));
     };
 
     std::cout << "API en ligne sur http://localhost:8081" << std::endl;
-    li::http_serve(api, 8081);
+    li::http_serve(api, 8081, s::threads = 100);
     
     return 0;
 }

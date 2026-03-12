@@ -68,7 +68,7 @@ int main() {
 
     // Cache (chargement au démarrage) 
     std::vector<SongFeature> global_songs_cache;
-    std::cout << "⏳ Chargement de MongoDB vers la RAM C++..." << std::endl;
+    std::cout << "Chargement de MongoDB vers la RAM C++..." << std::endl;
     
     auto cursor = collection.find({});
     for (auto&& doc : cursor) {
