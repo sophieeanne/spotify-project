@@ -5,9 +5,9 @@ import statistics
 import random
 import numpy as np
 
-BASE_URL = "http://127.0.0.1:8081"  
-CONCURRENCY = 100   
-NB_REQUESTS = 5000 
+BASE_URL = "http://127.0.0.1:8080"  
+CONCURRENCY = 1000   
+NB_REQUESTS = 1000 
 
 def load_track_data(filename):
     ids = []
