@@ -99,7 +99,6 @@ int main(int argc, char* argv[]) {
         //return 1;
     //}
 
-    // std::string mongo_uri = "mongodb+srv://manongjv:260211.migGjv!!@spotifycluster.mcv1eou.mongodb.net/?retryWrites=true&w=majority";
 
     //std::string mongo_uri(env_uri);
 
